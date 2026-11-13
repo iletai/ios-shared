@@ -66,11 +66,16 @@ jobs:
         run: echo "TEST_SCHEME=$INPUT_SCHEME" >> "$GITHUB_ENV"
         env:
           INPUT_SCHEME: ${{ inputs.scheme }}
-      # xcbeautify drops Swift Testing failure lines, so failures are also in test_output.
+      # xcbeautify drops Swift Testing failure lines: keep the raw log in test_output and print issues on failure.
       - name: Test
-        run: set -o pipefail && bundle exec fastlane test 2>&1 | xcbeautify --renderer github-actions
+        run: |
+          mkdir -p fastlane/test_output
+          set -o pipefail && bundle exec fastlane test 2>&1 | tee fastlane/test_output/raw.log | xcbeautify --renderer github-actions
         env:
           FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT: 120
+      - name: Show test issues
+        if: failure()
+        run: grep -nE '✘|recorded an issue|error:|failed' fastlane/test_output/raw.log | tail -60 || true
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
