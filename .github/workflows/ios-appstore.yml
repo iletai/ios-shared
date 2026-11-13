@@ -21,6 +21,10 @@ on:
       xcconfig-secrets-path:
         type: string
         default: Config/Secrets.xcconfig
+      environment:
+        description: prod for Dev/Staging/Prod apps (runs fastlane --env prod); empty = legacy single-env app
+        type: string
+        default: ''
       submit:
         description: Submit for review after upload (needs explicit owner OK)
         type: boolean
@@ -57,6 +61,8 @@ on:
         required: false
       APP_REVIEW_EMAIL:
         required: false
+      PRIVATE_REPO_TOKEN:
+        required: false
 
 jobs:
   release:
@@ -73,10 +79,21 @@ jobs:
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
       ASC_KEY_CONTENT_BASE64: ${{ secrets.ASC_KEY_CONTENT_BASE64 }}
       FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT: 120
+      INPUT_ENVIRONMENT: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Check environment input
+        run: |
+          case "$INPUT_ENVIRONMENT" in ''|prod) ;; *) echo "::error::App Store uploads are Prod-only (environment: prod)"; exit 1 ;; esac
+      # Optional fine-grained PAT (Contents: read) so SwiftPM can clone private iletai packages; never echoed.
+      - name: Private package access
+        env:
+          PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+        run: |
+          [ -n "$PRIVATE_REPO_TOKEN" ] || exit 0
+          git config --global url."https://x-access-token:${PRIVATE_REPO_TOKEN}@github.com/iletai/".insteadOf "https://github.com/iletai/"
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: ${{ inputs.xcode-version }}
@@ -114,9 +131,9 @@ jobs:
       # Before the release step: a submission without screenshots is rejected by ASC.
       - name: Screenshots
         if: inputs.screenshots
-        run: bundle exec fastlane screenshots upload:true
+        run: bundle exec fastlane screenshots upload:true ${INPUT_ENVIRONMENT:+--env "$INPUT_ENVIRONMENT"}
       - name: Build, upload, submit=${{ inputs.submit }}
-        run: bundle exec fastlane release submit:${{ inputs.submit }} skip_metadata:${{ inputs.skip-metadata }}
+        run: bundle exec fastlane release submit:${{ inputs.submit }} skip_metadata:${{ inputs.skip-metadata }} ${INPUT_ENVIRONMENT:+--env "$INPUT_ENVIRONMENT"}
         env:
           MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}

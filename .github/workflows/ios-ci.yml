@@ -21,6 +21,9 @@ on:
       xcconfig-secrets-path:
         type: string
         default: Config/Secrets.xcconfig
+    secrets:
+      PRIVATE_REPO_TOKEN:
+        required: false
 
 jobs:
   test:
@@ -29,6 +32,13 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+      # Optional fine-grained PAT (Contents: read) so SwiftPM can clone private iletai packages; never echoed.
+      - name: Private package access
+        env:
+          PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+        run: |
+          [ -n "$PRIVATE_REPO_TOKEN" ] || exit 0
+          git config --global url."https://x-access-token:${PRIVATE_REPO_TOKEN}@github.com/iletai/".insteadOf "https://github.com/iletai/"
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: ${{ inputs.xcode-version }}

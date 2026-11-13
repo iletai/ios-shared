@@ -1,7 +1,9 @@
 # Shared Fastfile for iletai iOS apps. Apps load it with:
 #   import_from_git(url: "https://github.com/iletai/ios-shared.git", branch: "main", path: "fastlane/Fastfile")
 #
-# App-specific values come only from ENV (commit non-secret ones in the app's fastlane/.env.default):
+# App-specific values come only from ENV (commit non-secret ones in the app's fastlane/.env.default).
+# Apps with Dev/Staging/Prod keep per-env values in fastlane/.env.<dev|staging|prod> and pick one with
+# fastlane's built-in `--env`, e.g. `bundle exec fastlane beta --env staging` (metadata/screenshots/release: prod only).
 #   APP_IDENTIFIER, XCODE_PROJECT, SCHEME   required; APPLE_TEAM_ID required for signing lanes
 #   EXTRA_APP_IDENTIFIERS   comma list signed with the app (widgets, extensions)
 #   TEST_SCHEME             scheme for `test` (default SCHEME); SCAN_* env is read by scan itself
@@ -20,11 +22,31 @@ require "shellwords"
 default_platform(:ios)
 
 platform :ios do
-  before_all do
+  before_all do |lane|
     ensure_bundle_exec
-    %w[APP_IDENTIFIER XCODE_PROJECT SCHEME].each do |key|
-      UI.user_error!("Missing ENV #{key} (set it in fastlane/.env.default)") if ENV[key].to_s.empty?
+    # `test` runs without --env (TEST_SCHEME); every other lane needs the app identity, from --env when the app has env files.
+    require_env! unless lane == :test
+    keys = lane == :test ? %w[XCODE_PROJECT] : %w[APP_IDENTIFIER XCODE_PROJECT SCHEME]
+    keys.each do |key|
+      UI.user_error!("Missing ENV #{key} (set it in fastlane/.env.default or .env.<env>)") if ENV[key].to_s.empty?
     end
+  end
+
+  # Name given to `--env` (fastlane loads fastlane/.env.<name> itself); empty = legacy single-env app.
+  def fastlane_env
+    Fastlane::Actions.lane_context[Fastlane::Actions::SharedValues::ENVIRONMENT].to_s
+  end
+
+  # Apps that ship fastlane/.env.<dev|staging|prod> must pick one; apps without them keep the legacy flow.
+  def require_env!
+    return unless fastlane_env.empty?
+    return if Dir.glob(File.join(FastlaneCore::FastlaneFolder.path, ".env.{dev,staging,prod}")).empty?
+    UI.user_error!("Pass --env dev|staging|prod")
+  end
+
+  def require_prod!(lane_name)
+    require_env!
+    UI.user_error!("#{lane_name} is Prod-only, got --env #{fastlane_env}") unless ["", "prod"].include?(fastlane_env)
   end
 
   def env_list(key)
@@ -47,7 +69,7 @@ platform :ios do
     ENV["sigh_#{bundle_id}_appstore_profile-name"] || "match AppStore #{bundle_id}"
   end
 
-  # Version from a v1.2.3 / release-1.2.3 tag; without a tag the xcconfig value is used.
+  # Version from a 1.2.3 / v1.2.3 / release-1.2.3 tag; without a tag the xcconfig value is used.
   def marketing_version_xcarg
     version = ENV["RELEASE_VERSION"].to_s.sub(/\A(v|release-)/, "")
     version.match?(/\A\d+\.\d+\.\d+\z/) ? " MARKETING_VERSION=#{version}" : ""
@@ -84,6 +106,7 @@ platform :ios do
 
   desc "One-time local setup: register bundle IDs + CAPABILITIES, report the ASC record, create match profiles"
   lane :bootstrap do
+    require_env!
     api_key = asc_api_key
     app_identifiers.each do |id|
       bundle = Spaceship::ConnectAPI::BundleId.find(id) ||
@@ -107,6 +130,7 @@ platform :ios do
 
   desc "Sync certificates and profiles via match (options: type:, readonly:)"
   lane :sync_signing do |options|
+    require_env!
     setup_ci_keychain
     match(
       app_identifier: app_identifiers,
@@ -122,6 +146,7 @@ platform :ios do
   lane :test do
     # sh runs inside fastlane/, package paths are relative to the repo root.
     env_list("SWIFT_PACKAGES").each { |dir| sh("cd ../#{dir} && swift test") }
+    UI.user_error!("Set TEST_SCHEME (or SCHEME) in fastlane/.env.default") if (ENV["TEST_SCHEME"] || ENV["SCHEME"]).to_s.empty?
     scan(
       project: ENV["XCODE_PROJECT"],
       scheme: ENV["TEST_SCHEME"] || ENV["SCHEME"],
@@ -184,6 +209,7 @@ platform :ios do
 
   desc "Build and upload to TestFlight internal testers (option: changelog:)"
   lane :beta do |options|
+    require_env!
     api_key = asc_api_key
     build_number = build_signed(api_key: api_key)
 
@@ -208,11 +234,13 @@ platform :ios do
 
   desc "Upload metadata only (fastlane/metadata), no binary or screenshots"
   lane :metadata do
+    require_prod!("metadata")
     upload_to_app_store(**deliver_base(asc_api_key), skip_binary_upload: true, skip_screenshots: true)
   end
 
   desc "Capture screenshots (Snapfile); options: capture:false skips capture, upload:true pushes to ASC"
   lane :screenshots do |options|
+    require_prod!("screenshots")
     capture_screenshots unless options[:capture].to_s == "false"
     next unless options[:upload].to_s == "true"
     params = deliver_base(asc_api_key).merge(skip_binary_upload: true, skip_metadata: true, overwrite_screenshots: true)
@@ -228,6 +256,7 @@ platform :ios do
 
   desc "Build, upload binary + metadata; submit:true submits for review, skip_build:true submits the latest processed build"
   lane :release do |options|
+    require_prod!("release")
     api_key = asc_api_key
     skip_build = options[:skip_build].to_s == "true"
     build_signed(api_key: api_key) unless skip_build

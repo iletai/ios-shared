@@ -16,6 +16,22 @@ This repo holds no secrets and must be **public** (or private with Actions acces
 4. Repo secrets (names): `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_CONTENT_BASE64`, `MATCH_GIT_URL`, `MATCH_PASSWORD`, `MATCH_SSH_KEY`, `FASTLANE_KEYCHAIN_PASSWORD`; optional `APP_REVIEW_FIRST_NAME/LAST_NAME/PHONE/EMAIL` (unset keeps the contact already in ASC). Check with `gh secret list`.
 5. Verify locally: `bundle exec fastlane lanes`, then `bundle exec fastlane test`; run `beta` from CI via `workflow_dispatch`.
 
+## Dev / Staging / Prod environments
+
+Apps scaffolded with three environments commit `fastlane/.env.dev`, `.env.staging`, `.env.prod` (each sets `APP_IDENTIFIER`, `EXTRA_APP_IDENTIFIERS`, `SCHEME`, `BUILD_CONFIGURATION`) and select one with fastlane's built-in `--env`:
+
+```sh
+bundle exec fastlane bootstrap --env staging   # once per environment
+bundle exec fastlane beta --env dev
+bundle exec fastlane release --env prod submit:true
+```
+
+- `bootstrap`, `sync_signing`, `beta` refuse to run without `--env` when those files exist; `metadata`, `screenshots`, `release` accept only `--env prod`. `test` needs no env (`TEST_SCHEME`).
+- Build numbers come from the TestFlight history of the environment's own App Store Connect record.
+- Workflows take input `environment`: `ios-testflight.yml` accepts `dev|staging|prod` and runs the job in GitHub Environment `dev` / `staging` / `production`; `ios-appstore.yml` accepts `prod` and always runs in `production`. Empty `environment` keeps the single-environment behaviour.
+- Environment secrets override repo secrets of the same name for that job (callers still pass `secrets: inherit`).
+- Optional secret `PRIVATE_REPO_TOKEN` (fine-grained PAT, Contents read-only) lets SwiftPM clone private `github.com/iletai/*` packages on CI.
+
 ## Release this repo
 
 Callers pin `@main` (workflows) and `branch: "main"` (Fastfile). Work on `develop`, merge to `main` when an app has been verified on CI. Pin a tag instead of `main` if an app must not move.
