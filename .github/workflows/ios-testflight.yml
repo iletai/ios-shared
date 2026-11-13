@@ -1,0 +1,87 @@
+# Reusable: build Release with match and upload to TestFlight.
+name: iOS TestFlight
+
+on:
+  workflow_call:
+    inputs:
+      scheme:
+        description: Overrides SCHEME from fastlane/.env.default
+        type: string
+        default: ''
+      xcode-version:
+        type: string
+        default: latest-stable
+      ruby-version:
+        type: string
+        default: '3.3'
+    secrets:
+      APPLE_TEAM_ID:
+        required: true
+      ASC_KEY_ID:
+        required: true
+      ASC_ISSUER_ID:
+        required: true
+      ASC_KEY_CONTENT_BASE64:
+        required: true
+      MATCH_GIT_URL:
+        required: true
+      MATCH_PASSWORD:
+        required: true
+      MATCH_SSH_KEY:
+        required: true
+      FASTLANE_KEYCHAIN_PASSWORD:
+        required: true
+
+jobs:
+  beta:
+    name: Build & upload to TestFlight
+    runs-on: macos-26
+    timeout-minutes: 60
+    concurrency:
+      group: testflight-${{ github.repository }}-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: ${{ inputs.xcode-version }}
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ inputs.ruby-version }}
+          bundler-cache: true
+      - name: Generate project
+        if: hashFiles('project.yml') != ''
+        run: |
+          which xcodegen || brew install xcodegen
+          xcodegen generate
+      - name: Scheme override
+        if: inputs.scheme != ''
+        run: echo "SCHEME=$INPUT_SCHEME" >> "$GITHUB_ENV"
+        env:
+          INPUT_SCHEME: ${{ inputs.scheme }}
+      - name: SSH for match repo
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.MATCH_SSH_KEY }}
+      - name: Build and upload
+        run: bundle exec fastlane beta
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_CONTENT_BASE64: ${{ secrets.ASC_KEY_CONTENT_BASE64 }}
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          FASTLANE_KEYCHAIN_PASSWORD: ${{ secrets.FASTLANE_KEYCHAIN_PASSWORD }}
+          FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT: 120
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          RELEASE_VERSION: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipa-${{ github.sha }}
+          path: build/*.ipa
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,18 @@
+name: App Store
+on:
+  workflow_dispatch:
+    inputs:
+      submit:
+        description: Submit for review
+        type: boolean
+        default: false
+      screenshots:
+        type: boolean
+        default: false
+jobs:
+  release:
+    uses: iletai/ios-shared/.github/workflows/ios-appstore.yml@main
+    with:
+      submit: ${{ inputs.submit }}
+      screenshots: ${{ inputs.screenshots }}
+    secrets: inherit

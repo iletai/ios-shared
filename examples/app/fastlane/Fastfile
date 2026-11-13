@@ -1,0 +1,2 @@
+# Public repo, so CI needs no extra credentials to fetch it (the match deploy key cannot clone other repos).
+import_from_git(url: "https://github.com/iletai/ios-shared.git", branch: "main", path: "fastlane/Fastfile")

@@ -1,0 +1,12 @@
+name: TestFlight
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+jobs:
+  ci:
+    uses: iletai/ios-shared/.github/workflows/ios-ci.yml@main
+  beta:
+    needs: ci
+    uses: iletai/ios-shared/.github/workflows/ios-testflight.yml@main
+    secrets: inherit
