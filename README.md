@@ -13,7 +13,7 @@ This repo holds no secrets and must be **public** (or private with Actions acces
 1. Copy `examples/app/fastlane/{Fastfile,Appfile,Matchfile,.env.default}` and fill `.env.default` (bundle IDs, project, schemes, packages, capabilities).
 2. Keep app-only files: `Snapfile`, `metadata/`, `screenshots/`. Move app-only lanes (e.g. a UI gallery lane) into the app Fastfile after the `import_from_git` line.
 3. Replace workflows with the callers in `examples/app/.github/workflows/`.
-4. Repo secrets (names): `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_CONTENT_BASE64`, `MATCH_GIT_URL`, `MATCH_PASSWORD`, `MATCH_SSH_KEY`, `FASTLANE_KEYCHAIN_PASSWORD`; App Store also `APP_REVIEW_FIRST_NAME/LAST_NAME/PHONE/EMAIL`. Check with `gh secret list`.
+4. Repo secrets (names): `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_CONTENT_BASE64`, `MATCH_GIT_URL`, `MATCH_PASSWORD`, `MATCH_SSH_KEY`, `FASTLANE_KEYCHAIN_PASSWORD`; optional `APP_REVIEW_FIRST_NAME/LAST_NAME/PHONE/EMAIL` (unset keeps the contact already in ASC). Check with `gh secret list`.
 5. Verify locally: `bundle exec fastlane lanes`, then `bundle exec fastlane test`; run `beta` from CI via `workflow_dispatch`.
 
 ## Release this repo

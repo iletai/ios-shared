@@ -2,13 +2,15 @@
 #   import_from_git(url: "https://github.com/iletai/ios-shared.git", branch: "main", path: "fastlane/Fastfile")
 #
 # App-specific values come only from ENV (commit non-secret ones in the app's fastlane/.env.default):
-#   APP_IDENTIFIER, XCODE_PROJECT, SCHEME, APPLE_TEAM_ID            required
+#   APP_IDENTIFIER, XCODE_PROJECT, SCHEME   required; APPLE_TEAM_ID required for signing lanes
 #   EXTRA_APP_IDENTIFIERS   comma list signed with the app (widgets, extensions)
 #   TEST_SCHEME             scheme for `test` (default SCHEME); SCAN_* env is read by scan itself
 #   BUILD_CONFIGURATION     archive configuration (default Release-Production)
 #   SWIFT_PACKAGES          comma list of local package dirs run with `swift test` before the app tests
 #   CAPABILITIES            comma list for `bootstrap`, e.g. HEALTHKIT,IN_APP_PURCHASE
-#   APP_REVIEW_FIRST_NAME/LAST_NAME/PHONE/EMAIL[/NOTES]  for `release`
+#   APP_REVIEW_FIRST_NAME/LAST_NAME/PHONE/EMAIL/NOTES  optional for `release`; unset keeps the ASC values
+#   APP_RATING_CONFIG_PATH  optional age-rating JSON for `release` (repo-relative)
+#   RELEASE_NOTES_FILE      optional TestFlight changelog file for `beta` (repo-relative)
 # Secrets: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_CONTENT_BASE64 (CI) or ASC_KEY_PATH (local .p8),
 #          MATCH_GIT_URL, MATCH_PASSWORD, FASTLANE_KEYCHAIN_PASSWORD (CI only).
 require "base64"
@@ -20,7 +22,7 @@ default_platform(:ios)
 platform :ios do
   before_all do
     ensure_bundle_exec
-    %w[APP_IDENTIFIER XCODE_PROJECT SCHEME APPLE_TEAM_ID].each do |key|
+    %w[APP_IDENTIFIER XCODE_PROJECT SCHEME].each do |key|
       UI.user_error!("Missing ENV #{key} (set it in fastlane/.env.default)") if ENV[key].to_s.empty?
     end
   end
@@ -149,7 +151,7 @@ platform :ios do
         use_automatic_signing: false,
         targets: [s["target"]],
         build_configurations: [build_configuration],
-        team_id: ENV["APPLE_TEAM_ID"],
+        team_id: ENV.fetch("APPLE_TEAM_ID"),
         code_sign_identity: "Apple Distribution",
         profile_name: match_profile_name(s.dig("buildSettings", "PRODUCT_BUNDLE_IDENTIFIER"))
       )
@@ -186,7 +188,9 @@ platform :ios do
     build_number = build_signed(api_key: api_key)
 
     changelog = options[:changelog]
-    changelog ||= File.read(ENV["RELEASE_NOTES_FILE"]).strip if ENV["RELEASE_NOTES_FILE"] && File.exist?(ENV["RELEASE_NOTES_FILE"])
+    # Lane code runs inside fastlane/, so resolve the file from the repo root.
+    notes_file = ENV["RELEASE_NOTES_FILE"].to_s.empty? ? nil : File.expand_path(ENV["RELEASE_NOTES_FILE"], "..")
+    changelog ||= File.read(notes_file).strip if notes_file && File.exist?(notes_file)
     changelog ||= begin
       previous_tag = sh("git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true", log: false).strip
       range = previous_tag.empty? ? "-10" : "#{previous_tag}..HEAD"
@@ -229,19 +233,21 @@ platform :ios do
     build_signed(api_key: api_key) unless skip_build
 
     review_info = {
-      first_name: ENV.fetch("APP_REVIEW_FIRST_NAME"),
-      last_name: ENV.fetch("APP_REVIEW_LAST_NAME"),
-      phone_number: ENV.fetch("APP_REVIEW_PHONE"),
-      email_address: ENV.fetch("APP_REVIEW_EMAIL"),
+      first_name: ENV["APP_REVIEW_FIRST_NAME"],
+      last_name: ENV["APP_REVIEW_LAST_NAME"],
+      phone_number: ENV["APP_REVIEW_PHONE"],
+      email_address: ENV["APP_REVIEW_EMAIL"],
       notes: ENV["APP_REVIEW_NOTES"]
-    }.compact
+    }.reject { |_, v| v.to_s.empty? }
+    rating = ENV["APP_RATING_CONFIG_PATH"].to_s.empty? ? nil : ENV["APP_RATING_CONFIG_PATH"]
 
     upload_to_app_store(
       **deliver_base(api_key),
       skip_binary_upload: skip_build,
       skip_screenshots: true,
       skip_metadata: options[:skip_metadata].to_s == "true" || ENV["SKIP_METADATA"] == "true",
-      app_review_information: review_info,
+      app_review_information: review_info.empty? ? nil : review_info,
+      app_rating_config_path: rating,
       submit_for_review: options[:submit].to_s == "true",
       automatic_release: options[:automatic_release].to_s == "true",
       submission_information: { add_id_info_uses_idfa: false }

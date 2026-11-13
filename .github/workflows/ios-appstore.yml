@@ -43,13 +43,13 @@ on:
       FASTLANE_KEYCHAIN_PASSWORD:
         required: true
       APP_REVIEW_FIRST_NAME:
-        required: true
+        required: false
       APP_REVIEW_LAST_NAME:
-        required: true
+        required: false
       APP_REVIEW_PHONE:
-        required: true
+        required: false
       APP_REVIEW_EMAIL:
-        required: true
+        required: false
 
 jobs:
   release:
