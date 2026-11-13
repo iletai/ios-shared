@@ -14,6 +14,13 @@ on:
       ruby-version:
         type: string
         default: '3.3'
+      xcconfig-secrets:
+        description: Comma list of repo secret names written as NAME = value to xcconfig-secrets-path (empty ones skipped)
+        type: string
+        default: ''
+      xcconfig-secrets-path:
+        type: string
+        default: Config/Secrets.xcconfig
     secrets:
       APPLE_TEAM_ID:
         required: true
@@ -51,6 +58,19 @@ jobs:
         with:
           ruby-version: ${{ inputs.ruby-version }}
           bundler-cache: true
+      # Values come from the caller's secrets (secrets: inherit); never echoed.
+      - name: Write secrets xcconfig
+        if: inputs.xcconfig-secrets != ''
+        env:
+          NAMES: ${{ inputs.xcconfig-secrets }}
+          XCCONFIG_PATH: ${{ inputs.xcconfig-secrets-path }}
+          ALL_SECRETS: ${{ toJSON(secrets) }}
+        run: |
+          ruby -rjson -e '
+            all = JSON.parse(ENV["ALL_SECRETS"])
+            lines = ENV["NAMES"].split(",").map(&:strip).filter_map { |n| v = all[n].to_s; "#{n} = #{v}" unless v.empty? }
+            File.write(ENV["XCCONFIG_PATH"], lines.join("\n") + "\n") unless lines.empty?
+            puts "Wrote #{lines.size} key(s) to #{ENV["XCCONFIG_PATH"]}"'
       - name: Generate project
         if: hashFiles('project.yml') != ''
         run: |
